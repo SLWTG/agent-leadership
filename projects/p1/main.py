@@ -30,9 +30,6 @@ STOCKS = {
 }
 
 
-"""
-**参数校验**——`get_stock_change` 开头加一行，非法代码进不了工具：
-"""
 def get_stock_change(code: str) -> dict:
     
     if not (isinstance(code, str) and code.isdigit() and len(code) == 6):
@@ -74,9 +71,6 @@ TOOLS = [{
 ]
 
 
-"""
-**工具执行零防御**—— 模型传参不总是规范的，缺 key / 非法 JSON 会直接崩。改成注册表 + 容错（这正好是你学的 **Skill 抽象的雏形**：一张表 = 能力清单，加工具只加一行）：
-"""
 TOOL_HANDLERS = {"get_stock_change": get_stock_change, "get_usd_cny": get_usd_cny}
 
 def execute_tool(name: str, arguments: str) -> dict:
@@ -90,21 +84,12 @@ def execute_tool(name: str, arguments: str) -> dict:
         return {"error": f"参数解析失败: {e}"}   # 回填给模型，让它修正后重试
     
 
-# def execute_tool(name: str, arguments: str) -> dict:
-#     args = json.loads(arguments)
-#     if name == "get_stock_change":
-#         return get_stock_change(args["code"])
-#     raise ValueError(f"未知工具: {name}")
-
 def chat_loop(user_input: str, max_turns: int = 3):
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_input},
     ]
     for _ in range(max_turns):
-        """
-        **API 调用无异常处理**—— 网络 / 限流 / 鉴权失败会直接崩：
-        """
         try:
             resp = client.chat.completions.create(
                 model=os.getenv("MODEL", "deepseek-flash"),
@@ -130,4 +115,10 @@ def chat_loop(user_input: str, max_turns: int = 3):
     print("达到最大轮次，停止（防死循环 = A5 的第一课）")
 
 if __name__ == "__main__":
+    # —— 单元测试断言（生产级门槛）——
+    assert get_stock_change("600000")["found"] is True, "正常分支应 found=True"
+    assert get_stock_change("abc")["found"] is False, "非法代码应被拒绝"
+    assert get_stock_change("999999")["found"] is False, "未收录应如实告知"
+    assert get_usd_cny() == 7.05, "汇率工具应返回 7.05"
+    print("[PASS] 工具函数断言全部通过")
     chat_loop(input("提问：").strip())

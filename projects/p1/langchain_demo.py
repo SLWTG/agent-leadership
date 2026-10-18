@@ -56,4 +56,10 @@ def chat_loop(user_input: str, max_turns: int = 3):
             messages.append(ToolMessage(out, tool_call_id=tc['id']))
 
 if __name__ == '__main__':
+    # —— 单元测试断言（生产级门槛）——
+    assert get_stock_change("600000")["found"] is True, "正常分支应 found=True"
+    assert get_stock_change("abc")["found"] is False, "非法代码应被拒绝"
+    assert get_stock_change("999999")["found"] is False, "未收录应如实告知"
+    assert get_usd_cny() == 7.05, "汇率工具应返回 7.05"
+    print("[PASS] 工具函数断言全部通过")
     chat_loop(input('提问：').strip())
