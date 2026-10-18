@@ -29,7 +29,15 @@ STOCKS = {
     "601318": {"name": "中国平安", "change_pct": 2.10},
 }
 
+
+
 def get_stock_change(code: str) -> dict:
+    """
+    **参数校验**——`get_stock_change` 开头加一行，非法代码进不了工具：
+    """
+    if not (isinstance(code, str) and code.isdigit() and len(code) == 6):
+        return {"code": str(code), "found": False, "message": "股票代码应为6位数字"}
+    
     s = STOCKS.get(code)
     if not s:
         return {"code": code, "found": False, "message": "未收录该股票代码"}
@@ -48,11 +56,28 @@ TOOLS = [{
     },
 }]
 
+
+"""
+**工具执行零防御**—— 模型传参不总是规范的，缺 key / 非法 JSON 会直接崩。改成注册表 + 容错（这正好是你学的 **Skill 抽象的雏形**：一张表 = 能力清单，加工具只加一行）：
+"""
+TOOL_HANDLERS = {"get_stock_change": get_stock_change}
+
 def execute_tool(name: str, arguments: str) -> dict:
-    args = json.loads(arguments)
-    if name == "get_stock_change":
-        return get_stock_change(args["code"])
-    raise ValueError(f"未知工具: {name}")
+    handler = TOOL_HANDLERS.get(name)
+    if not handler:
+        return {"error": f"未知工具: {name}"}
+    try:
+        args = json.loads(arguments)
+        return handler(**args)
+    except (json.JSONDecodeError, TypeError, KeyError) as e:
+        return {"error": f"参数解析失败: {e}"}   # 回填给模型，让它修正后重试
+    
+
+# def execute_tool(name: str, arguments: str) -> dict:
+#     args = json.loads(arguments)
+#     if name == "get_stock_change":
+#         return get_stock_change(args["code"])
+#     raise ValueError(f"未知工具: {name}")
 
 def chat_loop(user_input: str, max_turns: int = 3):
     messages = [
@@ -60,11 +85,18 @@ def chat_loop(user_input: str, max_turns: int = 3):
         {"role": "user", "content": user_input},
     ]
     for _ in range(max_turns):
-        resp = client.chat.completions.create(
-            model=os.getenv("MODEL", "deepseek-chat"),
-            messages=messages,
-            tools=TOOLS,
-        )
+        """
+        **API 调用无异常处理**—— 网络 / 限流 / 鉴权失败会直接崩：
+        """
+        try:
+            resp = client.chat.completions.create(
+                model=os.getenv("MODEL", "deepseek-flash"),
+                messages=messages,
+                tools=TOOLS,
+            )
+        except Exception as e:
+            print(f"[API错误] {e}（生产环境做指数退避重试）")
+            return
         msg = resp.choices[0].message
         messages.append(msg.model_dump())
 
