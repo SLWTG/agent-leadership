@@ -10,15 +10,15 @@ client = OpenAI(
 )
 
 # —— 八段式 system（这就是模板的落地示范）——
-SYSTEM_PROMPT = """你是A股行情查询助手，服务于个人投资者。你的目标：用工具查询个股当日涨跌幅，给出简洁准确回答。
+SYSTEM_PROMPT = """你是A股行情查询助手，服务于个人投资者。你的目标：用工具查询个股当日涨跌幅，或当日美元汇率，给出简洁准确回答。
 
-【输入说明】你会收到用户的自然语言提问；若缺少6位股票代码，先请用户提供，不猜测。
+【输入说明】你会收到用户的自然语言提问；若是汇率问题使用汇率工具，若是股票查询，实现查询工具。
 
 【输出规范】一句话回答，包含股票名称与涨跌幅，简体中文。
 
-【执行规则】1. 查涨跌必须调用 get_stock_change 工具，禁止编造数字。2. 工具返回 found=false 时如实告知"未收录"。3. 只回答行情相关问题，其他问题礼貌拒绝。
+【执行规则】1. 先分析使用哪个工具。2. 工具返回 found=false 时如实告知"未收录"。3. 其他问题礼貌拒绝。
 
-【工具使用】工具：get_stock_change(code)；调用时机：用户询问涨跌且已有代码时；代码未知先索要；工具失败如实说明。
+【工具使用】代码未知先索要；工具失败如实说明。
 
 【质量自检】输出前检查：①数字来自工具返回 ②含股票名称 ③未编造未收录数据。"""
 
@@ -30,11 +30,11 @@ STOCKS = {
 }
 
 
-
+"""
+**参数校验**——`get_stock_change` 开头加一行，非法代码进不了工具：
+"""
 def get_stock_change(code: str) -> dict:
-    """
-    **参数校验**——`get_stock_change` 开头加一行，非法代码进不了工具：
-    """
+    
     if not (isinstance(code, str) and code.isdigit() and len(code) == 6):
         return {"code": str(code), "found": False, "message": "股票代码应为6位数字"}
     
@@ -42,6 +42,13 @@ def get_stock_change(code: str) -> dict:
     if not s:
         return {"code": code, "found": False, "message": "未收录该股票代码"}
     return {"code": code, "name": s["name"], "change_pct": s["change_pct"], "found": True}
+
+
+def get_usd_cny() -> float:
+    """
+    人民币美元汇率查询
+    """
+    return 7.05
 
 TOOLS = [{
     "type": "function",
@@ -54,13 +61,23 @@ TOOLS = [{
             "required": ["code"],
         },
     },
-}]
+},
+{
+    "type": "function",
+    "function": {
+        "name": "get_usd_cny",
+        "description": "查询人民币美元汇率",
+        "parameters": None,
+    },
+}
+
+]
 
 
 """
 **工具执行零防御**—— 模型传参不总是规范的，缺 key / 非法 JSON 会直接崩。改成注册表 + 容错（这正好是你学的 **Skill 抽象的雏形**：一张表 = 能力清单，加工具只加一行）：
 """
-TOOL_HANDLERS = {"get_stock_change": get_stock_change}
+TOOL_HANDLERS = {"get_stock_change": get_stock_change, "get_usd_cny": get_usd_cny}
 
 def execute_tool(name: str, arguments: str) -> dict:
     handler = TOOL_HANDLERS.get(name)
